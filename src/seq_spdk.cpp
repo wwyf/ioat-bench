@@ -40,7 +40,7 @@ benchmark seq_spdk(uint64_t chunk_size, uint64_t buffer_size, spdk_ioat_chan* ch
     using namespace std::chrono_literals;
 
     // Allocate the whole buffer, 8 bytes-aligned
-    uint64_t* buffer64 = (uint64_t*)spdk_malloc(buffer_size, sizeof(uint64_t), nullptr);
+    uint64_t* buffer64 = (uint64_t*)spdk_dma_malloc(buffer_size, sizeof(uint64_t), nullptr);
     uint8_t*  buffer8  = reinterpret_cast<uint8_t*>(buffer64);
 
     // Trick the optimizer into not optimizing any copies away
@@ -95,7 +95,7 @@ benchmark seq_spdk(uint64_t chunk_size, uint64_t buffer_size, spdk_ioat_chan* ch
         ++iterations;
     } while (time < 1s);
 
-    spdk_free(buffer64);
+    spdk_dma_free(buffer64);
 
     return {chunk_size, buffer_size, time, iterations};
 }
