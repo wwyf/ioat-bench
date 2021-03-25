@@ -19,5 +19,7 @@ cd build
 cmake ..
 make
 
+ulimit -c unlimited
 
 ./ioat-bench
+# ./ex4

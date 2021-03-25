@@ -162,18 +162,18 @@ void spdk_copy(){
     chan = ioat_init_one_chan();
     int check_count = 16;
     // prepare copy task
-    int block_count = 1024*1024;
-    int block_size = 1024*sizeof(char);
+    uint64_t block_count = 1024;
+    uint64_t block_size = 1024*1024*sizeof(char);
     char * buffer_src = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
     char * buffer_dst = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
 
     std::cout << "init buffer_src" << std::endl;
-    for (int i = 0; i < block_count * block_size ; i++){
+    for (uint64_t i = 0; i < block_count * block_size ; i++){
         buffer_src[i] = i % 255;
     }
 
     std::vector<int> iters;
-    for (int i = 0; i < block_count; i++){
+    for (uint64_t i = 0; i < block_count; i++){
         iters.push_back(i);
     }
     // std::random_shuffle(iters.begin(), iters.end());
@@ -185,9 +185,13 @@ void spdk_copy(){
     uint64_t duration = 0; // ns
     auto start_time = std::chrono::system_clock::now();
 
+
+
     // main loop
-    for (int i = 0; i < block_count; i++){
+    for (uint64_t i = 0; i < block_count; i++){
         cur_block = iters[i];
+
+        start_time = std::chrono::system_clock::now();
         done = 0;
         spdk_ioat_submit_copy(
             chan,
@@ -200,24 +204,86 @@ void spdk_copy(){
         while (!done){
             spdk_ioat_process_events(chan);
         }
+        duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now() - start_time).count();
+
     }
-    duration = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::system_clock::now() - start_time).count();
     std::cout << "duration : " << duration << std::endl;
     std::cout << "bandwidth : " << (block_count * block_size * 1000LL * 1000LL * 1000LL /duration)/(1024*1024) << " MB/s" << std::endl;
+    std::cout << "latency : " << duration/block_count << " ns/op" << std::endl;
 
-    std::cout << "buffer_src" << std::endl;
-    for (int i = 0; i < check_count; i++){
-        std::cout << (int)buffer_src[i] << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "buffer_dst" << std::endl;
-    for (int i = 0; i < check_count; i++){
-        std::cout << (int)buffer_dst[i] << " ";
-    }
-    std::cout << std::endl;
+    // std::cout << "buffer_src" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_src[i] << " ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "buffer_dst" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_dst[i] << " ";
+    // }
+    // std::cout << std::endl;
  
     spdk_ioat_detach(chan);
+}
+
+void memcpy_copy(){
+    int check_count = 16;
+    // prepare copy task
+    uint64_t block_count = 1024;
+    uint64_t block_size = 1024*1024*sizeof(char);
+    char * buffer_src = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
+    char * buffer_dst = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
+
+    std::cout << "init buffer_src" << std::endl;
+    for (uint64_t i = 0; i < block_count * block_size ; i++){
+        buffer_src[i] = i % 255;
+    }
+
+    std::vector<int> iters;
+    for (uint64_t i = 0; i < block_count; i++){
+        iters.push_back(i);
+    }
+    // std::random_shuffle(iters.begin(), iters.end());
+    std::cout << "init ok" << std::endl;
+
+    int done = 0;
+    int cur_block = 0;
+
+    uint64_t duration = 0; // ns
+    auto start_time = std::chrono::system_clock::now();
+
+
+
+    // main loop
+    for (uint64_t i = 0; i < block_count; i++){
+        cur_block = iters[i];
+
+        start_time = std::chrono::system_clock::now();
+        done = 0;
+        memcpy(
+            buffer_dst + cur_block*block_size,
+            buffer_src + cur_block*block_size,
+            block_size
+        );
+        duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now() - start_time).count();
+
+    }
+    std::cout << "duration : " << duration << std::endl;
+    std::cout << "bandwidth : " << (block_count * block_size * 1000LL * 1000LL * 1000LL /duration)/(1024*1024) << " MB/s" << std::endl;
+    std::cout << "latency : " << duration/block_count << " ns/op" << std::endl;
+
+    // std::cout << "buffer_src" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_src[i] << " ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "buffer_dst" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_dst[i] << " ";
+    // }
+    // std::cout << std::endl;
+ 
 }
 
 
@@ -236,6 +302,7 @@ int main(){
 
     // test1::test1();
     bench_spdk_ioatdma_one_chan::spdk_copy();
+    bench_spdk_ioatdma_one_chan::memcpy_copy();
     return 0;
 
 }
