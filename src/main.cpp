@@ -9,6 +9,8 @@
 #include <spdk/queue.h>
 #include <spdk/string.h>
 
+#include <libpmemobj.h>
+
 static int
 init(void)
 {
@@ -303,12 +305,162 @@ void memcpy_copy(uint64_t block_count, uint64_t block_size){
     spdk_dma_free(buffer_src);
 }
 
+void pmem_memcpy_copy(PMEMobjpool * pop, uint64_t block_count, uint64_t block_size){
+    int check_count = 16;
+    // prepare copy task
+    PMEMoid buffer_dst_oid;
+    pmemobj_zalloc(pop, &buffer_dst_oid, (block_count*block_size)+4096, 0);
+
+    char * buffer_src = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
+    char * buffer_dst = ((char *)pmemobj_direct(buffer_dst_oid)) + 48;
+
+    // std::cout << "init buffer_src" << std::endl;
+    for (uint64_t i = 0; i < block_count * block_size ; i++){
+        buffer_src[i] = i % 255;
+    }
+
+    std::vector<int> iters;
+    for (uint64_t i = 0; i < block_count; i++){
+        iters.push_back(i);
+    }
+    // std::random_shuffle(iters.begin(), iters.end());
+    // std::cout << "init ok" << std::endl;
+
+    int done = 0;
+    int cur_block = 0;
+
+    uint64_t duration = 0; // ns
+    auto start_time = std::chrono::system_clock::now();
+
+
+
+    // main loop
+    for (uint64_t i = 0; i < block_count; i++){
+        cur_block = iters[i];
+
+        start_time = std::chrono::system_clock::now();
+        done = 0;
+        // memcpy(
+        //     buffer_dst + cur_block*block_size,
+        //     buffer_src + cur_block*block_size,
+        //     block_size
+        // );
+        
+        // FIXME: will stall
+        pmemobj_memcpy_persist(
+            pop,
+            buffer_dst + cur_block*block_size,
+            buffer_src + cur_block*block_size,
+            block_size
+        );
+        duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now() - start_time).count();
+
+    }
+    print_result("pmem-memcpy", block_count, block_size, duration);
+
+    // std::cout << "buffer_src" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_src[i] << " ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "buffer_dst" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_dst[i] << " ";
+    // }
+    // std::cout << std::endl;
+ 
+    spdk_dma_free(buffer_src);
+    pmemobj_free(&buffer_dst_oid);
+}
+
+
+void pmem_spdk_copy(PMEMobjpool * pop, struct spdk_ioat_chan * chan ,uint64_t block_count, uint64_t block_size){
+    int check_count = 16;
+    // prepare copy task
+    PMEMoid buffer_dst_oid;
+    pmemobj_zalloc(pop, &buffer_dst_oid, (block_count*block_size)+4096, 0);
+
+    char * buffer_src = (char *)spdk_dma_zmalloc(block_count*block_size, block_size, NULL);
+    char * buffer_dst = ((char *)pmemobj_direct(buffer_dst_oid)) + 48;
+
+    // std::cout << "init buffer_src" << std::endl;
+    for (uint64_t i = 0; i < block_count * block_size ; i++){
+        buffer_src[i] = i % 255;
+    }
+
+    std::vector<int> iters;
+    for (uint64_t i = 0; i < block_count; i++){
+        iters.push_back(i);
+    }
+    // std::random_shuffle(iters.begin(), iters.end());
+    // std::cout << "init ok" << std::endl;
+
+    int done = 0;
+    int cur_block = 0;
+
+    uint64_t duration = 0; // ns
+    auto start_time = std::chrono::system_clock::now();
+
+
+
+    // main loop
+    for (uint64_t i = 0; i < block_count; i++){
+        cur_block = iters[i];
+
+        start_time = std::chrono::system_clock::now();
+        done = 0;
+
+        // FIXME: will stall
+        spdk_ioat_submit_copy(
+            chan,
+            &done,
+            ioat_done,
+            buffer_dst + cur_block*block_size,
+            buffer_src + cur_block*block_size,
+            block_size
+        );
+        while (!done){
+            spdk_ioat_process_events(chan);
+        }
+        duration += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now() - start_time).count();
+
+    }
+    print_result("pmem-memcpy", block_count, block_size, duration);
+
+    // std::cout << "buffer_src" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_src[i] << " ";
+    // }
+    // std::cout << std::endl;
+    // std::cout << "buffer_dst" << std::endl;
+    // for (uint64_t i = 0; i < check_count; i++){
+    //     std::cout << (int)buffer_dst[i] << " ";
+    // }
+    // std::cout << std::endl;
+ 
+    spdk_dma_free(buffer_src);
+    pmemobj_free(&buffer_dst_oid);
+}
+
+
+
 
 void bench_dram_copy(){
-    uint64_t max_capacity = 1ULL*1024ULL*1024ULL*1024ULL;
+    uint64_t one_gb = 1ULL*1024ULL*1024ULL*1024ULL;
+    // uint64_t max_capacity = 2ULL*1024ULL*1024ULL*1024ULL;
+    uint64_t max_capacity = 512ULL*1024ULL*1024ULL;
+
+    std::string pool_file = "/mnt/pmem/test_write_pool";
+    std::remove(pool_file.c_str());
+    sleep(2);
+    PMEMobjpool * pop = pmemobj_create(pool_file.c_str(), "TEST_WRITE", max_capacity + one_gb, 0066);
+
     std::vector<uint64_t> block_sizes;
     std::vector<uint64_t> block_counts;
-    uint64_t block_size_start = 64;
+    // uint64_t block_size_start = 64;
+    uint64_t block_size_start = 4096;
     for (uint64_t block_size = block_size_start; block_size <= 1024*1024*8; block_size *= 2){
         block_sizes.push_back(block_size);
         block_counts.push_back(max_capacity/block_size);
@@ -322,15 +474,33 @@ void bench_dram_copy(){
     for (int i = 0; i < length_block_sizes; i++){
         spdk_copy(chan, block_counts[i],block_sizes[i]);
         memcpy_copy(block_counts[i],block_sizes[i]);
+        pmem_memcpy_copy(pop, block_counts[i], block_sizes[i]);
+        pmem_spdk_copy(pop, chan, block_counts[i], block_sizes[i]);
     }
 
     spdk_ioat_detach(chan);
+    pmemobj_close(pop);
+    std::remove(pool_file.c_str());
 }
 
 
 }
 
 
+// namespace bench_spdk_ioatdma_queue_depth {
+
+// struct ioat_task {
+
+//     void* buffer_src;
+//     void* buffer_dst;
+// }
+
+// void prepare_ioat_task(){
+
+// }
+
+
+// }
 
 
 int main(){

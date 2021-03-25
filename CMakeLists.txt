@@ -74,6 +74,9 @@ link_libraries(rte_bus_pci)
 link_libraries(dl)
 link_libraries(rt)
 
+link_libraries(pmemobj)
+link_libraries(pmem)
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads)
