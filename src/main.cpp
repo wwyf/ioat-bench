@@ -153,7 +153,8 @@ ioat_init_one_chan(void)
 }
 
 void print_header(){
-    std::cout  << "block_count"
+    std::cout  << "type"
+        << "," << "block_count"
         << "," << "block_size"
         << "," << "duration"
         << "," << "bandwidth(MB/s)"
@@ -161,8 +162,9 @@ void print_header(){
     std::cout << std::endl;
 
 }
-void print_result(uint64_t block_count, uint64_t block_size, uint64_t duration){
-    std::cout  << block_count 
+void print_result(const char* type, uint64_t block_count, uint64_t block_size, uint64_t duration){
+    std::cout << type
+        << "," << block_count 
         << "," << block_size
         << "," << duration
         << "," << (block_count * block_size * 1000LL * 1000LL * 1000LL /duration)/(1024*1024)  // bandwidth MB/s
@@ -226,7 +228,7 @@ void spdk_copy(struct spdk_ioat_chan * chan ,  uint64_t block_count, uint64_t bl
 
     }
 
-    print_result(block_count, block_size, duration);
+    print_result("ioat", block_count, block_size, duration);
     // std::cout << "buffer_src" << std::endl;
     // for (uint64_t i = 0; i < check_count; i++){
     //     std::cout << (int)buffer_src[i] << " ";
@@ -284,7 +286,7 @@ void memcpy_copy(uint64_t block_count, uint64_t block_size){
                         std::chrono::system_clock::now() - start_time).count();
 
     }
-    print_result(block_count, block_size, duration);
+    print_result("memcpy", block_count, block_size, duration);
 
     // std::cout << "buffer_src" << std::endl;
     // for (uint64_t i = 0; i < check_count; i++){
